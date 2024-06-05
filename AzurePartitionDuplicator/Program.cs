@@ -2,26 +2,32 @@
 using System.IO;
 using System.Linq;
 using System.Collections.Generic;
+using CsvHelper;
+using CsvHelper.Configuration;
+using System.Globalization;
 
 class Program
+{
+    static void Main(string[] args)
     {
-        static void Main(string[] args)
-        {
-            Console.WriteLine("Please enter the filename of the exported table entries:");
-            string csvFilePath = Console.ReadLine();
+        Console.WriteLine("Please enter the filename of the 2D CSV file:");
+        string csvFilePath = Console.ReadLine();
 
-            Console.WriteLine("Please enter the filename of the list of partitions to duplicate into:");
-            string listFilePath = Console.ReadLine();
+        Console.WriteLine("Please enter the filename of the list CSV file:");
+        string listFilePath = Console.ReadLine();
 
-            string outputFilePath = "output.csv";
+        string outputFilePath = "C:\\Users\\NicholasMacdonald\\OneDrive - nurtur.group Ltd\\Apps\\AzurePartitionDuplicator\\output.csv";
 
         try
         {
-            var data2D = ReadDataToCopy(csvFilePath, out string[] headers);
+            // Read 2D CSV into a list of string arrays
+            var data2D = Read2DArrayFromCsv(csvFilePath, out string[] headers);
 
-            var partitionKeys = ReadPartition(listFilePath);
-            
-            BuildOutput(headers, data2D, partitionKeys, outputFilePath);
+            // Read list from CSV into a list of KeyRow objects
+            var keyRows = ReadKeyRowsFromCsv(listFilePath);
+
+            // Create the output CSV
+            CreateOutputCsv(headers, data2D, keyRows, outputFilePath);
 
             Console.WriteLine("CSV file has been created successfully.");
         }
@@ -31,35 +37,89 @@ class Program
         }
     }
 
-    static string[][] ReadDataToCopy(string filePath, out string[] headers)
+    static List<string[]> Read2DArrayFromCsv(string filePath, out string[] headers)
     {
-        var lines = File.ReadAllLines(filePath).Where(line => !string.IsNullOrWhiteSpace(line)).ToArray();
-        headers = lines[0].Split(',');
-        return lines.Skip(1).Select(line => line.Split(',')).ToArray();
-    }
-
-    static string[] ReadPartition(string filePath)
-    {
-        var line = File.ReadAllText(filePath).Trim();
-        return line.Split(',').Where(item => !string.IsNullOrWhiteSpace(item)).ToArray();
-    }
-
-    static void BuildOutput(string[] headers, string[][] data2D, string[] partitionKeys, string outputFilePath)
+        using (var reader = new StreamReader(filePath))
+        using (var csv = new CsvReader(reader, new CsvConfiguration(CultureInfo.InvariantCulture)
         {
-            using (var writer = new StreamWriter(outputFilePath))
-            {
-                writer.WriteLine(string.Join(",", headers));
+            IgnoreBlankLines = true,
+            TrimOptions = TrimOptions.Trim,
+            MissingFieldFound = null, // Ignore missing fields
+            BadDataFound = context => { } // Ignore bad data
+        }))
+        {
+            csv.Read();
+            csv.ReadHeader();
+            headers = csv.HeaderRecord;
 
-                foreach (var key in partitionKeys)
+            var records = new List<string[]>();
+            while (csv.Read())
+            {
+                var record = new string[headers.Length];
+                for (var i = 0; i < headers.Length; i++)
                 {
-                    foreach (var row in data2D)
+                    record[i] = csv.GetField(i);
+                }
+                records.Add(record);
+            }
+            return records;
+        }
+    }
+
+    static List<KeyRow> ReadKeyRowsFromCsv(string filePath)
+    {
+        using (var reader = new StreamReader(filePath))
+        using (var csv = new CsvReader(reader, new CsvConfiguration(CultureInfo.InvariantCulture)
+        {
+            IgnoreBlankLines = true,
+            TrimOptions = TrimOptions.Trim,
+            MissingFieldFound = null, // Ignore missing fields
+            BadDataFound = context => { } // Ignore bad data
+        }))
+        {
+            return csv.GetRecords<KeyRow>().ToList();
+        }
+    }
+
+    static void CreateOutputCsv(string[] headers, List<string[]> data2D, List<KeyRow> keyRows, string outputFilePath)
+    {
+        using (var writer = new StreamWriter(outputFilePath))
+        using (var csv = new CsvWriter(writer, new CsvConfiguration(CultureInfo.InvariantCulture)
+        {
+            TrimOptions = TrimOptions.Trim,
+            NewLine = Environment.NewLine,
+            ShouldQuote = (args) => true // Quote all fields
+        }))
+        {
+            // Write the header row once
+            foreach (var header in headers)
+            {
+                csv.WriteField(header);
+            }
+            csv.NextRecord();
+
+            foreach (var keyRow in keyRows)
+            {
+                foreach (var row in data2D)
+                {
+                    csv.WriteField(keyRow.PartitionKey); // Column 1: Partition Key
+                    csv.WriteField(row[1] + keyRow.RowKey); // Column 2: Original Column 2 with Row Key appended
+                    csv.WriteField(keyRow.RowKey); // Column 3: Row Key
+
+                    // Add the remaining columns from the original row
+                    for (int i = 3; i < row.Length; i++)
                     {
-                        var newRow = new List<string>(row);
-                        newRow[0] = key;
-                        writer.WriteLine(string.Join(",", newRow));
+                        csv.WriteField(row[i]);
                     }
+                    csv.NextRecord();
                 }
             }
         }
     }
+}
 
+public class KeyRow
+{
+    public string PartitionKey { get; set; }
+    public string RowKey { get; set; }
+}
