@@ -16,6 +16,9 @@ class Program
         Console.WriteLine("Please enter the filename of the list CSV file:");
         string listFilePath = Console.ReadLine();
 
+        Console.WriteLine("Are we copying Automation content or Campaign Content? Please enter \"A\" or \"C\":");
+        string copytype = Console.ReadLine();
+
         string outputFilePath = "C:\\Users\\NicholasMacdonald\\OneDrive - nurtur.group Ltd\\Apps\\AzurePartitionDuplicator\\output.csv";
 
         try
@@ -26,8 +29,21 @@ class Program
             // Read list from CSV into a list of KeyRow objects
             var keyRows = ReadKeyRowsFromCsv(listFilePath);
 
-            // Create the output CSV
-            CreateOutputCsv(headers, data2D, keyRows, outputFilePath);
+            if(copytype == "A")
+            {
+                // Create the output CSV
+                MarketCopyCreateOutputCsv(headers, data2D, keyRows, outputFilePath);
+                Console.WriteLine("CSV file has been created successfully.");
+            }
+            else if(copytype == "C")
+            {
+                CampaignCopyCreateOutputCsv(headers, data2D, keyRows, outputFilePath);
+                Console.WriteLine("CSV file has been created successfully.");
+            }
+            else 
+            {
+                Console.WriteLine("Unknown copy format: " + copytype);
+            }
 
             Console.WriteLine("CSV file has been created successfully.");
         }
@@ -81,7 +97,7 @@ class Program
         }
     }
 
-    static void CreateOutputCsv(string[] headers, List<string[]> data2D, List<KeyRow> keyRows, string outputFilePath)
+    static void MarketCopyCreateOutputCsv(string[] headers, List<string[]> data2D, List<KeyRow> keyRows, string outputFilePath)
     {
         using (var writer = new StreamWriter(outputFilePath))
         using (var csv = new CsvWriter(writer, new CsvConfiguration(CultureInfo.InvariantCulture)
@@ -107,7 +123,42 @@ class Program
                     csv.WriteField(keyRow.RowKey); // Column 3: Row Key
 
                     // Add the remaining columns from the original row
-                    for (int i = 3; i < row.Length; i++)
+                    for (int i = 1; i < row.Length; i++)
+                    {
+                        csv.WriteField(row[i]);
+                    }
+                    csv.NextRecord();
+                }
+            }
+        }
+    }
+
+    static void CampaignCopyCreateOutputCsv(string[] headers, List<string[]> data2D, List<KeyRow> keyRows, string outputFilePath)
+    {
+        using (var writer = new StreamWriter(outputFilePath))
+        using (var csv = new CsvWriter(writer, new CsvConfiguration(CultureInfo.InvariantCulture)
+        {
+            TrimOptions = TrimOptions.Trim,
+            NewLine = Environment.NewLine,
+            ShouldQuote = (args) => true // Quote all fields
+        }))
+        {
+            // Write the header row once
+            foreach (var header in headers)
+            {
+                csv.WriteField(header);
+            }
+            csv.NextRecord();
+
+            foreach (var keyRow in keyRows)
+            {
+                foreach (var row in data2D)
+                {
+                    csv.WriteField(keyRow.PartitionKey); // Column 1: Partition Key
+
+
+                    // Add the remaining columns from the original row
+                    for (int i = 1; i < row.Length; i++)
                     {
                         csv.WriteField(row[i]);
                     }
